@@ -1,8 +1,10 @@
 """Tests for cli.py - CLI commands."""
 
+import os
 from pathlib import Path
 import pytest
 from click.testing import CliRunner
+from unittest.mock import patch
 
 from skillman.cli import cli
 
@@ -14,137 +16,248 @@ def runner():
 
 
 @pytest.fixture
-def fixtures_dir():
-    """Path to test fixtures directory."""
-    return Path(__file__).parent / "fixtures"
+def mock_global_skills(tmp_path):
+    """Create mock global skills directory."""
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+
+    # Create skill-1
+    skill1 = global_dir / "skill-1"
+    skill1.mkdir()
+    (skill1 / "SKILL.md").write_text(
+        "---\nname: skill-1\ndescription: First skill\n---\n# Skill 1"
+    )
+
+    # Create skill-2
+    skill2 = global_dir / "skill-2"
+    skill2.mkdir()
+    (skill2 / "SKILL.md").write_text(
+        "---\nname: skill-2\ndescription: Second skill\n---\n# Skill 2"
+    )
+
+    return global_dir
+
+
+@pytest.fixture
+def mock_project_dir(tmp_path):
+    """Create mock project directory."""
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    return project_dir
 
 
 class TestListCommand:
     """Tests for 'skillman ls' command."""
 
-    def test_ls_with_valid_path(self, runner, fixtures_dir):
-        """Should list skills from specified directory."""
-        result = runner.invoke(cli, ["ls", "--path", str(fixtures_dir)])
+    def test_ls_no_project_skills(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should show warning when no skills in project."""
+        monkeypatch.chdir(mock_project_dir)
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["ls"])
 
         assert result.exit_code == 0
-        assert "valid-skill" in result.output
-        assert "no-description" in result.output
-        assert "skill-with-extras" in result.output
-        # invalid-skill should NOT appear (no SKILL.md)
-        assert "invalid-skill" not in result.output
+        assert "No skills in this project" in result.output
 
-    def test_ls_with_nonexistent_path(self, runner):
-        """Should show error message for nonexistent directory."""
-        result = runner.invoke(cli, ["ls", "--path", "/nonexistent/path"])
+    def test_ls_with_project_skills(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should list skills in project."""
+        monkeypatch.chdir(mock_project_dir)
 
-        assert result.exit_code == 0  # Click doesn't exit with error by default
+        # Create project skills directory with a symlink
+        project_skills = mock_project_dir / ".claude" / "skills"
+        project_skills.mkdir(parents=True)
+
+        skill1_link = project_skills / "skill-1"
+        os.symlink(mock_global_skills / "skill-1", skill1_link, target_is_directory=True)
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["ls"])
+
+        assert result.exit_code == 0
+        assert "Project skills (1)" in result.output
+        assert "skill-1" in result.output
+        assert "First skill" in result.output
+
+    def test_ls_global(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should list all global skills."""
+        monkeypatch.chdir(mock_project_dir)
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["ls", "--global"])
+
+        assert result.exit_code == 0
+        assert "Global skills (2)" in result.output
+        assert "skill-1" in result.output
+        assert "skill-2" in result.output
+
+    def test_ls_available_all(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should list all available skills when none in project."""
+        monkeypatch.chdir(mock_project_dir)
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["ls", "--available"])
+
+        assert result.exit_code == 0
+        assert "Available skills (2)" in result.output
+        assert "skill-1" in result.output
+        assert "skill-2" in result.output
+
+    def test_ls_available_filtered(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should filter out skills already in project."""
+        monkeypatch.chdir(mock_project_dir)
+
+        # Add skill-1 to project
+        project_skills = mock_project_dir / ".claude" / "skills"
+        project_skills.mkdir(parents=True)
+        skill1_link = project_skills / "skill-1"
+        os.symlink(mock_global_skills / "skill-1", skill1_link, target_is_directory=True)
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["ls", "--available"])
+
+        assert result.exit_code == 0
+        assert "Available skills (1)" in result.output
+        assert "skill-2" in result.output
+        assert "skill-1" not in result.output
+
+    def test_ls_available_none(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should show message when all skills are in project."""
+        monkeypatch.chdir(mock_project_dir)
+
+        # Add both skills to project
+        project_skills = mock_project_dir / ".claude" / "skills"
+        project_skills.mkdir(parents=True)
+
+        for skill_name in ["skill-1", "skill-2"]:
+            skill_link = project_skills / skill_name
+            os.symlink(mock_global_skills / skill_name, skill_link, target_is_directory=True)
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["ls", "--available"])
+
+        assert result.exit_code == 0
+        assert "No skills available to add" in result.output
+
+    def test_ls_global_not_found(self, runner, tmp_path, monkeypatch):
+        """Should show error when global directory doesn't exist."""
+        monkeypatch.chdir(tmp_path)
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", tmp_path / "nonexistent"):
+            result = runner.invoke(cli, ["ls", "--global"])
+
+        assert result.exit_code == 0
         assert "not found" in result.output.lower()
 
-    def test_ls_with_empty_directory(self, runner, tmp_path):
-        """Should show message when no skills found."""
-        result = runner.invoke(cli, ["ls", "--path", str(tmp_path)])
+
+class TestAddCommand:
+    """Tests for 'skillman add' command."""
+
+    def test_add_skill_success(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should add skill to project."""
+        monkeypatch.chdir(mock_project_dir)
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["add", "skill-1"])
 
         assert result.exit_code == 0
-        assert "no skills found" in result.output.lower()
+        assert "Added skill 'skill-1'" in result.output
 
-    def test_ls_simple_output(self, runner, fixtures_dir):
-        """Should display simple list without --detailed flag."""
-        result = runner.invoke(cli, ["ls", "--path", str(fixtures_dir)])
+        # Verify symlink was created
+        project_skill = mock_project_dir / ".claude" / "skills" / "skill-1"
+        assert project_skill.exists()
+        assert project_skill.is_symlink()
 
-        assert result.exit_code == 0
-        # Should show skill names
-        assert "valid-skill" in result.output
-        # Should show descriptions
-        assert "This is a valid test skill with description" in result.output
-        # Should show location
-        assert str(fixtures_dir) in result.output
+    def test_add_skill_not_found(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should show error when skill doesn't exist in global."""
+        monkeypatch.chdir(mock_project_dir)
 
-    def test_ls_detailed_output(self, runner, fixtures_dir):
-        """Should display detailed information with --detailed flag."""
-        result = runner.invoke(cli, ["ls", "--detailed", "--path", str(fixtures_dir)])
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["add", "nonexistent"])
 
         assert result.exit_code == 0
-        # Should show skill names
-        assert "valid-skill" in result.output
-        # Should show paths
-        assert "Path:" in result.output
-        # Should show extras for skill-with-extras
-        assert "Contains:" in result.output
-        assert "scripts" in result.output
+        assert "not found in global repository" in result.output
 
-    def test_ls_detailed_shows_extras(self, runner, fixtures_dir):
-        """Should list scripts/examples/resources in detailed mode."""
-        result = runner.invoke(cli, ["ls", "--detailed", "--path", str(fixtures_dir)])
+    def test_add_skill_already_exists(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should show warning when skill already in project."""
+        monkeypatch.chdir(mock_project_dir)
 
-        assert result.exit_code == 0
-        # skill-with-extras should show all extras
-        output_lines = result.output
-        assert "scripts" in output_lines
-        assert "examples" in output_lines
-        assert "resources" in output_lines
+        # Add skill first time
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            runner.invoke(cli, ["add", "skill-1"])
 
-    def test_ls_with_relative_path(self, runner, fixtures_dir, tmp_path, monkeypatch):
-        """Should handle relative paths correctly."""
-        # Change to temp directory
-        monkeypatch.chdir(fixtures_dir.parent)
-
-        result = runner.invoke(cli, ["ls", "--path", "./fixtures"])
+            # Try to add again
+            result = runner.invoke(cli, ["add", "skill-1"])
 
         assert result.exit_code == 0
-        assert "valid-skill" in result.output
+        assert "already exists in project" in result.output
 
-    def test_ls_short_flag(self, runner, fixtures_dir):
-        """Should accept -p as shorthand for --path."""
-        result = runner.invoke(cli, ["ls", "-p", str(fixtures_dir)])
+    def test_add_invalid_skill(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should show error when directory doesn't have SKILL.md."""
+        monkeypatch.chdir(mock_project_dir)
 
-        assert result.exit_code == 0
-        assert "valid-skill" in result.output
+        # Create directory without SKILL.md
+        invalid_skill = mock_global_skills / "invalid"
+        invalid_skill.mkdir()
 
-    def test_ls_short_detailed_flag(self, runner, fixtures_dir):
-        """Should accept -d as shorthand for --detailed."""
-        result = runner.invoke(cli, ["ls", "-d", "-p", str(fixtures_dir)])
-
-        assert result.exit_code == 0
-        assert "Path:" in result.output
-
-    def test_ls_no_description_shown_as_no_description(self, runner, fixtures_dir):
-        """Should show 'No description' for skills without description."""
-        result = runner.invoke(cli, ["ls", "--path", str(fixtures_dir)])
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["add", "invalid"])
 
         assert result.exit_code == 0
-        # The no-description skill should appear but with fallback text
-        assert "no-description" in result.output
+        assert "not a valid skill" in result.output
 
-    def test_ls_skills_sorted_alphabetically(self, runner, fixtures_dir):
-        """Should display skills in alphabetical order."""
-        result = runner.invoke(cli, ["ls", "--path", str(fixtures_dir)])
 
-        assert result.exit_code == 0
+class TestRemoveCommand:
+    """Tests for 'skillman remove' command."""
 
-        # Find positions of skill names in output
-        output = result.output
-        pos_no_desc = output.find("no-description")
-        pos_skill_extras = output.find("skill-with-extras")
-        pos_valid = output.find("valid-skill")
+    def test_remove_skill_success(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should remove skill from project."""
+        monkeypatch.chdir(mock_project_dir)
 
-        # All should be found
-        assert pos_no_desc > 0
-        assert pos_skill_extras > 0
-        assert pos_valid > 0
+        # Add skill first
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            runner.invoke(cli, ["add", "skill-1"])
 
-        # Should be in alphabetical order
-        assert pos_no_desc < pos_skill_extras < pos_valid
-
-    def test_ls_count_displayed(self, runner, fixtures_dir):
-        """Should show count of skills found."""
-        result = runner.invoke(cli, ["ls", "--path", str(fixtures_dir)])
+            # Remove it
+            result = runner.invoke(cli, ["remove", "skill-1"])
 
         assert result.exit_code == 0
-        # Should show "Skills (3):" or similar
-        assert "(3)" in result.output
+        assert "Removed skill 'skill-1'" in result.output
 
-    def test_version_option(self, runner):
-        """Should display version with --version flag."""
+        # Verify symlink was removed
+        project_skill = mock_project_dir / ".claude" / "skills" / "skill-1"
+        assert not project_skill.exists()
+
+    def test_remove_skill_not_found(self, runner, mock_project_dir, monkeypatch):
+        """Should show warning when skill not in project."""
+        monkeypatch.chdir(mock_project_dir)
+
+        result = runner.invoke(cli, ["remove", "nonexistent"])
+
+        assert result.exit_code == 0
+        assert "not found in project" in result.output
+
+    def test_remove_non_symlink(self, runner, mock_project_dir, monkeypatch):
+        """Should warn when trying to remove non-symlink."""
+        monkeypatch.chdir(mock_project_dir)
+
+        # Create a regular directory (not a symlink)
+        project_skills = mock_project_dir / ".claude" / "skills"
+        project_skills.mkdir(parents=True)
+        regular_dir = project_skills / "regular"
+        regular_dir.mkdir()
+        (regular_dir / "SKILL.md").write_text("# Regular")
+
+        result = runner.invoke(cli, ["remove", "regular"])
+
+        assert result.exit_code == 0
+        assert "not a symlink" in result.output
+
+
+class TestVersionCommand:
+    """Tests for version flag."""
+
+    def test_version(self, runner):
+        """Should display version."""
         result = runner.invoke(cli, ["--version"])
 
         assert result.exit_code == 0

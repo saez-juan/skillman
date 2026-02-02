@@ -2,6 +2,15 @@
 
 CLI tool to manage Claude skills with ease.
 
+## Concept
+
+Skillman manages Claude skills using a two-tier system:
+
+- **Global repository**: `~/.claude/skillman/skills` - All your available skills
+- **Project skills**: `./.claude/skills` - Skills active in the current project (symlinks)
+
+When you run `skillman ls` in a project, it shows skills specific to that project. You can add skills from your global repository to individual projects using symlinks, keeping each project's skills isolated.
+
 ## Installation
 
 ### Using Poetry (Recommended)
@@ -23,42 +32,67 @@ pip install .
 
 ## Usage
 
-### List skills
+### List skills in current project
 
 ```bash
-# List all skills in ~/.claude/skills
-poetry run skillman ls
-
-# Or if installed globally with pip
+# Show skills in current project (./.claude/skills)
 skillman ls
 
-# List skills with detailed information
-skillman ls --detailed
+# Show all skills in global repository
+skillman ls --global
 
-# List skills from a custom directory
-skillman ls --path /path/to/skills
-skillman ls --path ./skills  # relative path works too
+# Show skills available to add (in global but not in project)
+skillman ls --available
 ```
 
-### Examples
+### Manage project skills
 
 ```bash
-# Simple list
-poetry run skillman ls
+# Add a skill from global repository to current project
+skillman add <skill-name>
 
-# Detailed view with descriptions and metadata
-poetry run skillman ls --detailed
-
-# Check skills in a specific directory
-poetry run skillman ls --path ~/.claude/skills
+# Remove a skill from current project
+skillman remove <skill-name>
 ```
+
+### Example workflow
+
+```bash
+# Check what skills are available globally
+skillman ls --global
+
+# Add a skill to your project
+skillman add setup-ssh
+
+# List skills in project
+skillman ls
+
+# Check what else you can add
+skillman ls --available
+
+# Remove a skill from project
+skillman remove setup-ssh
+```
+
+## How it works
+
+1. **Global skills** are stored in `~/.claude/skillman/skills`
+2. When you run `skillman add <skill>`, it creates a **symlink** from `./.claude/skills/<skill>` to the global skill
+3. `skillman ls` shows only the skills linked in your current project
+4. Each project has its own set of skills, but they all reference the same global repository
+
+This means:
+- Skills are stored once (in global repository)
+- Each project only references the skills it needs
+- Updating a skill in the global repository updates it for all projects
+- No duplication, easy management
 
 ## Features
 
-- **List skills**: View all available Claude skills
-- **Beautiful output**: Rich terminal UI with colors and tables
-- **Detailed view**: See skill descriptions and additional resources
-- **Flexible paths**: Support for custom skill directories
+- **Project-based skills**: Each project has its own set of skills
+- **Global repository**: Centralized storage for all your skills
+- **Symlink management**: Automatic symlink creation and removal
+- **Beautiful output**: Rich terminal UI with colors
 - **Fast**: Quick scanning and parsing of skill directories
 
 ## Development
@@ -86,7 +120,10 @@ poetry run pytest -v
 
 - **click** >= 8.0.0 - CLI framework
 - **rich** >= 13.0.0 - Beautiful terminal output
+- **tomli** >= 2.0.0 - TOML parser (Python < 3.11)
+- **tomli-w** >= 1.0.0 - TOML writer
 - **pytest** >= 7.0.0 - Testing framework (dev dependency)
+- **pyinstaller** >= 6.0.0 - Build standalone binaries (dev dependency)
 
 ## Project Structure
 
@@ -95,17 +132,17 @@ skillman/
 ├── src/
 │   └── skillman/
 │       ├── __init__.py
-│       ├── cli.py          # Main CLI interface
-│       └── skills.py       # Skills management logic
-├── tests/                  # Unit tests
-│   ├── test_cli.py         # CLI command tests
-│   ├── test_skills.py      # SkillManager tests
-│   └── fixtures/           # Test fixtures
-├── skills/                 # Example skills for testing
-│   ├── result-pattern/
-│   └── setup-ssh/
-├── CLAUDE.md               # Guidance for Claude Code
-├── pyproject.toml          # Poetry configuration
+│       ├── __main__.py      # Entry point for binary
+│       ├── cli.py           # Main CLI interface
+│       ├── config.py        # Configuration management
+│       └── skills.py        # Skills parsing logic
+├── tests/                   # Unit tests
+│   ├── test_cli.py          # CLI command tests
+│   ├── test_config.py       # Config tests
+│   ├── test_skills.py       # SkillManager tests
+│   └── fixtures/            # Test fixtures
+├── CLAUDE.md                # Guidance for Claude Code
+├── pyproject.toml           # Poetry configuration
 └── README.md
 ```
 

@@ -1,13 +1,19 @@
 """Main CLI interface for skillman."""
 
+import os
 from pathlib import Path
 import click
 from rich.console import Console
 
-from .config import get_skills_paths
+from .config import DEFAULT_SKILLS_PATH
 from .skills import SkillManager
 
 console = Console()
+
+
+def get_project_skills_dir():
+    """Get project skills directory (relative to current working directory)."""
+    return Path.cwd() / ".claude" / "skills"
 
 
 @click.group()
@@ -19,58 +25,97 @@ def cli():
 
 @cli.command("ls")
 @click.option(
-    "--path",
-    "-p",
-    default=None,
-    help="Custom path to skills directory (default: paths from config)",
+    "--global",
+    "show_global",
+    is_flag=True,
+    help="Show skills from global repository (~/.claude/skillman/skills)",
 )
 @click.option(
-    "--detailed",
-    "-d",
+    "--available",
+    "show_available",
     is_flag=True,
-    help="Show detailed information about each skill",
+    help="Show skills available to add (not yet in project)",
 )
-def list_skills(path, detailed):
-    """List all available Claude skills."""
+def list_skills(show_global, show_available):
+    """List Claude skills in current project."""
 
-    # Determine the skills directories
-    if path:
-        skills_dirs = [Path(path)]
+    if show_global:
+        _list_global_skills()
+    elif show_available:
+        _list_available_skills()
     else:
-        skills_dirs = get_skills_paths()
+        _list_project_skills()
 
-    all_skills = []
-    valid_dirs = []
 
-    for skills_dir in skills_dirs:
-        if not skills_dir.exists():
-            console.print(f"Skills directory not found: {skills_dir}", style="yellow")
-            continue
-
-        valid_dirs.append(skills_dir)
-        manager = SkillManager(skills_dir)
-        skills = manager.get_skills()
-        all_skills.extend(skills)
-
-    if not valid_dirs:
-        console.print("No valid skills directories found.", style="yellow")
-        console.print("Tip: Create the directory or specify a custom path with --path", style="dim")
+def _list_project_skills():
+    """List skills in the current project."""
+    if not get_project_skills_dir().exists():
+        console.print("No skills in this project.", style="yellow")
+        console.print(f"Tip: Use 'skillman add <skill-name>' to add skills from global repository", style="dim")
         return
 
-    if not all_skills:
-        console.print("No skills found in configured paths.", style="yellow")
+    manager = SkillManager(get_project_skills_dir())
+    skills = manager.get_skills()
+
+    if not skills:
+        console.print("No skills in this project.", style="yellow")
+        console.print(f"Tip: Use 'skillman add <skill-name>' to add skills", style="dim")
         return
 
-    # Display skills
-    if detailed:
-        _display_detailed_skills(all_skills, valid_dirs)
-    else:
-        _display_simple_skills(all_skills, valid_dirs)
+    _display_skills(skills, f"Project skills ({len(skills)}):")
 
 
-def _display_simple_skills(skills, skills_dirs):
+def _list_global_skills():
+    """List all skills in global repository."""
+    if not DEFAULT_SKILLS_PATH.exists():
+        console.print(f"Global skills directory not found: {DEFAULT_SKILLS_PATH}", style="yellow")
+        console.print("Tip: Create the directory and add skills to it", style="dim")
+        return
+
+    manager = SkillManager(DEFAULT_SKILLS_PATH)
+    skills = manager.get_skills()
+
+    if not skills:
+        console.print("No skills in global repository.", style="yellow")
+        return
+
+    _display_skills(skills, f"Global skills ({len(skills)}):")
+
+
+def _list_available_skills():
+    """List skills that can be added to the project (in global but not in project)."""
+    if not DEFAULT_SKILLS_PATH.exists():
+        console.print(f"Global skills directory not found: {DEFAULT_SKILLS_PATH}", style="yellow")
+        return
+
+    # Get global skills
+    global_manager = SkillManager(DEFAULT_SKILLS_PATH)
+    global_skills = global_manager.get_skills()
+
+    if not global_skills:
+        console.print("No skills in global repository.", style="yellow")
+        return
+
+    # Get project skills (if they exist)
+    project_skill_names = set()
+    if get_project_skills_dir().exists():
+        project_manager = SkillManager(get_project_skills_dir())
+        project_skills = project_manager.get_skills()
+        project_skill_names = {s["name"] for s in project_skills}
+
+    # Filter available skills (not in project)
+    available_skills = [s for s in global_skills if s["name"] not in project_skill_names]
+
+    if not available_skills:
+        console.print("No skills available to add (all global skills are already in project).", style="yellow")
+        return
+
+    _display_skills(available_skills, f"Available skills ({len(available_skills)}):")
+
+
+def _display_skills(skills, title):
     """Display skills in a simple list format."""
-    console.print(f"\nSkills ({len(skills)}):", style="bold")
+    console.print(f"\n{title}", style="bold")
     console.print()
 
     for skill in sorted(skills, key=lambda s: s["name"]):
@@ -80,42 +125,62 @@ def _display_simple_skills(skills, skills_dirs):
         console.print(f"    {desc}", style="dim")
         console.print()
 
-    console.print("Locations:", style="dim")
-    for d in skills_dirs:
-        console.print(f"  - {d}", style="dim")
+
+@cli.command("add")
+@click.argument("skill_name")
+def add_skill(skill_name):
+    """Add a skill from global repository to current project."""
+
+    # Check if global skill exists
+    global_skill_path = DEFAULT_SKILLS_PATH / skill_name
+    if not global_skill_path.exists():
+        console.print(f"Skill '{skill_name}' not found in global repository.", style="red")
+        console.print(f"Location: {DEFAULT_SKILLS_PATH}", style="dim")
+        return
+
+    # Verify it's a valid skill (has SKILL.md)
+    if not (global_skill_path / "SKILL.md").exists():
+        console.print(f"'{skill_name}' is not a valid skill (missing SKILL.md).", style="red")
+        return
+
+    # Create project skills directory if it doesn't exist
+    get_project_skills_dir().mkdir(parents=True, exist_ok=True)
+
+    # Check if skill already exists in project
+    project_skill_path = get_project_skills_dir() / skill_name
+    if project_skill_path.exists():
+        console.print(f"Skill '{skill_name}' already exists in project.", style="yellow")
+        return
+
+    # Create symlink
+    try:
+        os.symlink(global_skill_path, project_skill_path, target_is_directory=True)
+        console.print(f"Added skill '{skill_name}' to project.", style="green")
+    except Exception as e:
+        console.print(f"Failed to add skill: {e}", style="red")
 
 
-def _display_detailed_skills(skills, skills_dirs):
-    """Display skills with detailed information."""
-    console.print(f"\nSkills ({len(skills)}):", style="bold")
-    console.print()
+@cli.command("remove")
+@click.argument("skill_name")
+def remove_skill(skill_name):
+    """Remove a skill from current project."""
 
-    for skill in sorted(skills, key=lambda s: s["name"]):
-        console.print(f"  {skill['name']}", style="cyan bold")
+    project_skill_path = get_project_skills_dir() / skill_name
 
-        if skill["description"]:
-            console.print(f"    {skill['description']}", style="white")
+    # Check if skill exists in project
+    if not project_skill_path.exists():
+        console.print(f"Skill '{skill_name}' not found in project.", style="yellow")
+        return
+
+    # Remove symlink
+    try:
+        if project_skill_path.is_symlink():
+            project_skill_path.unlink()
+            console.print(f"Removed skill '{skill_name}' from project.", style="green")
         else:
-            console.print("    No description", style="dim")
-
-        console.print(f"    Path: {skill['path']}", style="dim")
-
-        extras = []
-        if skill.get("has_scripts"):
-            extras.append("scripts")
-        if skill.get("has_examples"):
-            extras.append("examples")
-        if skill.get("has_resources"):
-            extras.append("resources")
-
-        if extras:
-            console.print(f"    Contains: {', '.join(extras)}", style="dim")
-
-        console.print()
-
-    console.print("Locations:", style="dim")
-    for d in skills_dirs:
-        console.print(f"  - {d}", style="dim")
+            console.print(f"Warning: '{skill_name}' is not a symlink. Use regular file operations to remove it.", style="yellow")
+    except Exception as e:
+        console.print(f"Failed to remove skill: {e}", style="red")
 
 
 if __name__ == "__main__":

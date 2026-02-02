@@ -4,7 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Skillman es una CLI tool para gestionar Claude skills. Permite listar, inspeccionar y eventualmente manipular skills ubicadas en `~/.claude/skills` o en cualquier directorio customizado.
+Skillman es una CLI tool para gestionar Claude skills usando un sistema de dos niveles:
+
+- **Repositorio global**: `~/.claude/skillman/skills` - Todas las skills disponibles del usuario
+- **Skills del proyecto**: `./.claude/skills` - Skills activas en el proyecto actual (symlinks)
+
+Cuando ejecutás `skillman ls` en un proyecto, muestra solo las skills de ese proyecto. Se pueden agregar skills del repositorio global a proyectos individuales usando symlinks, manteniendo las skills de cada proyecto aisladas.
 
 ## Development Commands
 
@@ -14,23 +19,37 @@ Skillman es una CLI tool para gestionar Claude skills. Permite listar, inspeccio
 poetry install
 ```
 
-### Comandos comunes
+### Comandos principales
 ```bash
-# Ejecutar la CLI en desarrollo
+# Listar skills del proyecto actual
 poetry run skillman ls
 
-# Listar skills con información detallada
-poetry run skillman ls --detailed
+# Listar skills del repositorio global
+poetry run skillman ls --global
 
-# Listar skills desde un directorio custom
-poetry run skillman ls --path ./skills
-poetry run skillman ls --path /path/to/skills
+# Listar skills disponibles para agregar
+poetry run skillman ls --available
 
-# Ejecutar tests
+# Agregar una skill al proyecto
+poetry run skillman add <skill-name>
+
+# Remover una skill del proyecto
+poetry run skillman remove <skill-name>
+```
+
+### Testing
+```bash
+# Ejecutar todos los tests
 poetry run pytest
 
 # Ejecutar tests con verbose output
 poetry run pytest -v
+
+# Ejecutar un archivo específico
+poetry run pytest tests/test_cli.py
+
+# Ejecutar un test específico
+poetry run pytest tests/test_cli.py::TestListCommand::test_ls_project_skills
 ```
 
 ### Instalación global (opcional)
@@ -64,27 +83,28 @@ El binario es standalone y no requiere Python instalado.
 src/skillman/
 ├── __init__.py
 ├── __main__.py     # Entry point para binario y python -m skillman
-├── cli.py          # Punto de entrada CLI (Click framework)
+├── cli.py          # Comandos CLI (ls, add, remove)
 ├── config.py       # Manejo de configuración (config.toml)
 └── skills.py       # Lógica de parsing y discovery de skills
 
-skillman.spec         # PyInstaller spec file para compilar binario
+skillman.spec       # PyInstaller spec file para compilar binario
 ```
 
 ### Flujo de ejecución
 
 1. **cli.py** - Entry point usando Click
-   - Define comandos CLI (actualmente solo `ls`)
-   - Maneja opciones (`--path`, `--detailed`)
-   - Delega lógica de skills a `SkillManager`
+   - `skillman ls`: lista skills del proyecto (`./.claude/skills`)
+   - `skillman ls --global`: lista skills del repo global (`~/.claude/skillman/skills`)
+   - `skillman ls --available`: lista skills disponibles para agregar
+   - `skillman add <skill>`: crea symlink de global a proyecto
+   - `skillman remove <skill>`: elimina symlink del proyecto
    - Usa Rich para output con colores y formato
 
 2. **config.py** - Configuration management
-   - Maneja el archivo de configuración `~/.claude/skillman/config.toml`
-   - `get_skills_paths()`: retorna lista de paths donde buscar skills
-   - `add_skills_path()`: agrega un nuevo path a la configuración
-   - `remove_skills_path()`: elimina un path de la configuración
-   - Crea el archivo con valores por defecto si no existe
+   - `DEFAULT_SKILLS_PATH`: path del repositorio global (`~/.claude/skillman/skills`)
+   - `ensure_config_exists()`: crea config file con defaults si no existe
+   - `load_config()`: lee configuración desde `~/.claude/skillman/config.toml`
+   - `get_skills_paths()`: retorna lista de paths donde buscar skills globales
 
 3. **skills.py** - Core logic
    - `SkillManager`: clase principal para descubrir y parsear skills
@@ -92,19 +112,35 @@ skillman.spec         # PyInstaller spec file para compilar binario
    - `_parse_skill()`: parsea un skill individual desde su directorio
    - `_extract_description()`: extrae descripción del frontmatter YAML en SKILL.md
 
+### Conceptos clave
+
+**PROJECT_SKILLS_DIR**: `./.claude/skills` (relativo al directorio actual)
+- Contiene symlinks a skills del repositorio global
+- Se crea automáticamente cuando ejecutás `skillman add`
+- Es específico de cada proyecto
+
+**DEFAULT_SKILLS_PATH**: `~/.claude/skillman/skills`
+- Repositorio global de todas tus skills
+- Se crea automáticamente la primera vez
+- Shared entre todos los proyectos
+
+**Symlinks**:
+- `skillman add` crea symlinks de global a proyecto
+- `skillman remove` elimina solo el symlink, no la skill global
+- Permite que múltiples proyectos usen la misma skill sin duplicación
+
 ### Configuración
 
 El archivo de configuración se ubica en `~/.claude/skillman/config.toml` y se crea automáticamente la primera vez que se ejecuta skillman.
 
 ```toml
-# Lista de paths donde buscar skills
+# Lista de paths donde buscar skills globales
 skills_paths = [
-    "/home/user/.claude/skillman/skills",
-    "/path/to/other/skills"
+    "/home/user/.claude/skillman/skills"
 ]
 ```
 
-Por defecto, skillman busca skills en `~/.claude/skillman/skills`. Se pueden agregar múltiples paths y skillman buscará skills en todos ellos.
+Por defecto, skillman busca skills globales en `~/.claude/skillman/skills`.
 
 ### Formato de skills
 
@@ -139,11 +175,21 @@ Estos skills son ejemplos reales tomados de otro proyecto y sirven para testing.
 ### Estructura de tests
 ```
 tests/
-├── test_cli.py      # Tests de comandos CLI usando CliRunner
+├── test_cli.py      # Tests de comandos CLI (ls, add, remove)
 ├── test_config.py   # Tests de configuración
 ├── test_skills.py   # Tests de SkillManager
 └── fixtures/        # Skills de prueba con diferentes configuraciones
 ```
+
+### Tests de CLI
+
+Los tests de CLI usan `CliRunner` de Click y testean:
+- `skillman ls` sin skills en proyecto (warning)
+- `skillman ls --global` con skills globales
+- `skillman ls --available` filtrando skills ya agregadas
+- `skillman add <skill>` creando symlinks
+- `skillman remove <skill>` eliminando symlinks
+- Edge cases: skills que no existen, symlinks rotos, etc.
 
 ### Ejecutar tests
 ```bash
@@ -157,7 +203,7 @@ poetry run pytest -v
 poetry run pytest tests/test_cli.py
 
 # Un test específico
-poetry run pytest tests/test_cli.py::TestListCommand::test_ls_with_valid_path
+poetry run pytest tests/test_cli.py::TestListCommand::test_ls_project_skills
 ```
 
 ## Dependencies
@@ -181,3 +227,4 @@ poetry run pytest tests/test_cli.py::TestListCommand::test_ls_with_valid_path
 - `Path` objects para file paths (no strings)
 - Return `None` o listas vacías para casos sin resultados (no exceptions)
 - Regex para parsing de frontmatter YAML (no parser externo)
+- Symlinks para vincular skills (no copy-paste)
