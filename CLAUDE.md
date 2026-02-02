@@ -42,15 +42,33 @@ pip install .
 skillman ls
 ```
 
+### Compilar a binario
+```bash
+# Compilar usando PyInstaller
+poetry run pyinstaller skillman.spec --noconfirm
+
+# El binario queda en dist/skillman
+./dist/skillman --version
+./dist/skillman ls
+
+# Instalar en el sistema (copiar a un directorio en PATH)
+sudo cp dist/skillman /usr/local/bin/
+```
+
+El binario es standalone y no requiere Python instalado.
+
 ## Architecture
 
 ### Estructura del proyecto
 ```
 src/skillman/
 ├── __init__.py
+├── __main__.py     # Entry point para binario y python -m skillman
 ├── cli.py          # Punto de entrada CLI (Click framework)
 ├── config.py       # Manejo de configuración (config.toml)
 └── skills.py       # Lógica de parsing y discovery de skills
+
+skillman.spec         # PyInstaller spec file para compilar binario
 ```
 
 ### Flujo de ejecución
@@ -149,6 +167,7 @@ poetry run pytest tests/test_cli.py::TestListCommand::test_ls_with_valid_path
 - **tomli** ^2.0.0 - TOML parser (solo Python < 3.11)
 - **tomli-w** ^1.0.0 - TOML writer
 - **pytest** ^7.0.0 - Testing (dev dependency)
+- **pyinstaller** ^6.0.0 - Build standalone binaries (dev dependency)
 
 ## Python version
 

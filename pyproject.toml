@@ -15,6 +15,7 @@ tomli-w = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0.0"
+pyinstaller = {version = "^6.0.0", python = ">=3.8,<3.15"}
 
 [tool.poetry.scripts]
 skillman = "skillman.cli:cli"
