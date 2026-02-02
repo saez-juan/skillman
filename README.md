@@ -169,35 +169,37 @@ skillman add custom-validator
 
 ## How It Works
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Global Repository (~/.claude/skillman/skills)          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
-│  │  setup-ssh  │  │   result-   │  │  api-client │    │
-│  │             │  │   pattern   │  │             │    │
-│  └─────────────┘  └─────────────┘  └─────────────┘    │
-└──────────┬───────────────┬──────────────┬──────────────┘
-           │ symlink       │ symlink      │ symlink
-           ▼               ▼              ▼
-    ┌────────────────────────────────────────┐
-    │  Project A (./.claude/skills)          │
-    │  → setup-ssh                           │
-    │  → result-pattern                      │
-    └────────────────────────────────────────┘
+### Architecture Overview
 
-    ┌────────────────────────────────────────┐
-    │  Project B (./.claude/skills)          │
-    │  → result-pattern                      │
-    │  → api-client                          │
-    └────────────────────────────────────────┘
-```
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| **Global Repository** | `~/.claude/skillman/skills/` | Central storage for all your skills |
+| **Project Skills** | `./.claude/skills/` | Active skills in current project (symlinks) |
+| **Symlinks** | Project → Global | Automatic links that reference global skills |
 
-**Key Benefits:**
-1. Skills stored once, used everywhere
-2. Update a skill in global repo → all projects get the update
-3. Each project references only what it needs
-4. No duplication, no sync issues
-5. Easy to discover and share skills
+### Example Setup
+
+**Global Repository contains:**
+- `setup-ssh/`
+- `result-pattern/`
+- `api-client/`
+- `custom-validator/`
+
+**Project A uses:**
+- `setup-ssh` → (symlink to global)
+- `result-pattern` → (symlink to global)
+
+**Project B uses:**
+- `result-pattern` → (symlink to global)
+- `api-client` → (symlink to global)
+
+### Key Benefits
+
+- **Single Source of Truth**: Skills stored once in global repository
+- **Automatic Updates**: Update global skill → all projects get the update
+- **Project Isolation**: Each project references only what it needs
+- **Zero Duplication**: No copies, no sync issues
+- **Easy Discovery**: `skillman ls --global` shows all available skills
 
 ---
 
