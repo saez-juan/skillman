@@ -36,6 +36,9 @@ poetry run skillman add <skill-name>
 # Remover una skill del proyecto
 poetry run skillman remove <skill-name>
 
+# Guardar una skill del proyecto al repositorio global
+poetry run skillman save <skill-name>
+
 # Configurar bash completion
 poetry run skillman completion
 poetry run skillman completion --install
@@ -102,6 +105,7 @@ skillman.spec       # PyInstaller spec file para compilar binario
    - `skillman ls --available`: lista skills disponibles para agregar
    - `skillman add <skill>`: crea symlink de global a proyecto (con completion)
    - `skillman remove <skill>`: elimina symlink del proyecto (con completion)
+   - `skillman save <skill>`: mueve skill del proyecto a global y crea symlink (con completion)
    - `skillman completion`: genera e instala bash completion
    - Usa Rich para output con colores y formato
    - Shell completion integrado: autocompleta comandos y nombres de skills
@@ -133,7 +137,15 @@ skillman.spec       # PyInstaller spec file para compilar binario
 **Symlinks**:
 - `skillman add` crea symlinks de global a proyecto
 - `skillman remove` elimina solo el symlink, no la skill global
+- `skillman save` mueve una skill del proyecto al global y crea symlink
 - Permite que múltiples proyectos usen la misma skill sin duplicación
+
+**Flujo típico con save**:
+1. Creás una skill custom en tu proyecto (`./.claude/skills/my-skill/`)
+2. Ejecutás `skillman save my-skill`
+3. La skill se mueve a `~/.claude/skillman/skills/my-skill/`
+4. Se crea un symlink en el proyecto que apunta al global
+5. Ahora podés usar `skillman add my-skill` en otros proyectos
 
 ### Configuración
 
@@ -195,7 +207,8 @@ Los tests de CLI usan `CliRunner` de Click y testean:
 - `skillman ls --available` filtrando skills ya agregadas
 - `skillman add <skill>` creando symlinks
 - `skillman remove <skill>` eliminando symlinks
-- Edge cases: skills que no existen, symlinks rotos, etc.
+- `skillman save <skill>` moviendo skills y creando symlinks
+- Edge cases: skills que no existen, symlinks rotos, sobrescritura, etc.
 
 ### Ejecutar tests
 ```bash

@@ -253,6 +253,129 @@ class TestRemoveCommand:
         assert "not a symlink" in result.output
 
 
+class TestSaveCommand:
+    """Tests for 'skillman save' command."""
+
+    def test_save_skill_success(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should save a project skill to global repository."""
+        monkeypatch.chdir(mock_project_dir)
+
+        # Create a local skill (not a symlink)
+        project_skills = mock_project_dir / ".claude" / "skills"
+        project_skills.mkdir(parents=True)
+        local_skill = project_skills / "my-local-skill"
+        local_skill.mkdir()
+        (local_skill / "SKILL.md").write_text(
+            "---\nname: my-local-skill\ndescription: Local skill\n---\n# Local"
+        )
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["save", "my-local-skill"])
+
+        assert result.exit_code == 0
+        assert "saved successfully" in result.output.lower()
+
+        # Verify skill was moved to global repo
+        global_skill = mock_global_skills / "my-local-skill"
+        assert global_skill.exists()
+        assert (global_skill / "SKILL.md").exists()
+
+        # Verify symlink was created in project
+        project_skill = project_skills / "my-local-skill"
+        assert project_skill.exists()
+        assert project_skill.is_symlink()
+        assert project_skill.resolve() == global_skill
+
+    def test_save_skill_not_found(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should show error when skill not in project."""
+        monkeypatch.chdir(mock_project_dir)
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["save", "nonexistent"])
+
+        assert result.exit_code == 0
+        assert "not found in project" in result.output.lower()
+
+    def test_save_skill_already_symlink(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should show message when skill is already a symlink."""
+        monkeypatch.chdir(mock_project_dir)
+
+        # Create a symlink in project
+        project_skills = mock_project_dir / ".claude" / "skills"
+        project_skills.mkdir(parents=True)
+        skill_link = project_skills / "skill-1"
+        os.symlink(mock_global_skills / "skill-1", skill_link, target_is_directory=True)
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["save", "skill-1"])
+
+        assert result.exit_code == 0
+        assert "already in global repository" in result.output.lower()
+
+    def test_save_skill_invalid(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should show error when skill has no SKILL.md."""
+        monkeypatch.chdir(mock_project_dir)
+
+        # Create invalid skill (no SKILL.md)
+        project_skills = mock_project_dir / ".claude" / "skills"
+        project_skills.mkdir(parents=True)
+        invalid_skill = project_skills / "invalid"
+        invalid_skill.mkdir()
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            result = runner.invoke(cli, ["save", "invalid"])
+
+        assert result.exit_code == 0
+        assert "not a valid skill" in result.output.lower()
+
+    def test_save_skill_overwrite_existing(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should ask for confirmation when skill exists in global repo."""
+        monkeypatch.chdir(mock_project_dir)
+
+        # Create a local skill
+        project_skills = mock_project_dir / ".claude" / "skills"
+        project_skills.mkdir(parents=True)
+        local_skill = project_skills / "skill-1"
+        local_skill.mkdir()
+        (local_skill / "SKILL.md").write_text(
+            "---\nname: skill-1\ndescription: Modified\n---\n# Modified"
+        )
+
+        # skill-1 already exists in mock_global_skills
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            # Answer "no" to overwrite
+            result = runner.invoke(cli, ["save", "skill-1"], input="n\n")
+
+        assert result.exit_code == 0
+        assert "already exists" in result.output.lower()
+        assert "Aborted" in result.output
+
+    def test_save_skill_overwrite_confirmed(self, runner, mock_global_skills, mock_project_dir, monkeypatch):
+        """Should overwrite when user confirms."""
+        monkeypatch.chdir(mock_project_dir)
+
+        # Create a local skill with different content
+        project_skills = mock_project_dir / ".claude" / "skills"
+        project_skills.mkdir(parents=True)
+        local_skill = project_skills / "skill-1"
+        local_skill.mkdir()
+        (local_skill / "SKILL.md").write_text(
+            "---\nname: skill-1\ndescription: Modified version\n---\n# Modified"
+        )
+
+        with patch("skillman.cli.DEFAULT_SKILLS_PATH", mock_global_skills):
+            # Answer "yes" to overwrite
+            result = runner.invoke(cli, ["save", "skill-1"], input="y\n")
+
+        assert result.exit_code == 0
+        assert "saved successfully" in result.output.lower()
+
+        # Verify new version is in global repo
+        global_skill = mock_global_skills / "skill-1"
+        content = (global_skill / "SKILL.md").read_text()
+        assert "Modified version" in content
+
+
 class TestVersionCommand:
     """Tests for version flag."""
 

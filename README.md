@@ -87,6 +87,9 @@ skillman add <skill-name>
 
 # Remove a skill from current project
 skillman remove <skill-name>
+
+# Save a project skill to global repository (moves and creates symlink)
+skillman save <skill-name>
 ```
 
 ### Example workflow
@@ -106,6 +109,10 @@ skillman ls --available
 
 # Remove a skill from project
 skillman remove setup-ssh
+
+# Save a project-specific skill to global repository
+# (useful when you create a custom skill and want to reuse it)
+skillman save my-custom-skill
 ```
 
 ## How it works
@@ -114,11 +121,13 @@ skillman remove setup-ssh
 2. When you run `skillman add <skill>`, it creates a **symlink** from `./.claude/skills/<skill>` to the global skill
 3. `skillman ls` shows only the skills linked in your current project
 4. Each project has its own set of skills, but they all reference the same global repository
+5. When you run `skillman save <skill>`, it moves the skill from the project to global repo and creates a symlink back
 
 This means:
 - Skills are stored once (in global repository)
 - Each project only references the skills it needs
 - Updating a skill in the global repository updates it for all projects
+- You can create project-specific skills and save them to your global repository
 - No duplication, easy management
 
 ## Features

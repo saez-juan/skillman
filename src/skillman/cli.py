@@ -36,6 +36,24 @@ def complete_project_skills(ctx, param, incomplete):
     return [s["name"] for s in skills if s["name"].startswith(incomplete)]
 
 
+def complete_saveable_skills(ctx, param, incomplete):
+    """Shell completion for skills that can be saved (non-symlink skills in project)."""
+    project_dir = get_project_skills_dir()
+    if not project_dir.exists():
+        return []
+
+    # List all directories in project skills that are NOT symlinks
+    saveable = []
+    for item in project_dir.iterdir():
+        if item.is_dir() and not item.is_symlink():
+            # Verify it's a valid skill
+            if (item / "SKILL.md").exists():
+                if item.name.startswith(incomplete):
+                    saveable.append(item.name)
+
+    return saveable
+
+
 def get_project_skills_dir():
     """Get project skills directory (relative to current working directory)."""
     return Path.cwd() / ".claude" / "skills"
@@ -206,6 +224,72 @@ def remove_skill(skill_name):
             console.print(f"Warning: '{skill_name}' is not a symlink. Use regular file operations to remove it.", style="yellow")
     except Exception as e:
         console.print(f"Failed to remove skill: {e}", style="red")
+
+
+@cli.command("save")
+@click.argument("skill_name", shell_complete=complete_saveable_skills)
+def save_skill(skill_name):
+    """Save a project skill to global repository (moves and creates symlink)."""
+
+    project_skill_path = get_project_skills_dir() / skill_name
+
+    # Check if skill exists in project
+    if not project_skill_path.exists():
+        console.print(f"Skill '{skill_name}' not found in project.", style="red")
+        console.print(f"Project skills location: {get_project_skills_dir()}", style="dim")
+        return
+
+    # Check if it's already a symlink (already in global repo)
+    if project_skill_path.is_symlink():
+        console.print(f"Skill '{skill_name}' is already in global repository.", style="yellow")
+        console.print(f"It's linked to: {project_skill_path.resolve()}", style="dim")
+        return
+
+    # Verify it's a valid skill
+    if not (project_skill_path / "SKILL.md").exists():
+        console.print(f"'{skill_name}' is not a valid skill (missing SKILL.md).", style="red")
+        return
+
+    # Check if skill already exists in global repo
+    global_skill_path = DEFAULT_SKILLS_PATH / skill_name
+    if global_skill_path.exists():
+        console.print(f"Skill '{skill_name}' already exists in global repository.", style="yellow")
+        console.print(f"Location: {global_skill_path}", style="dim")
+
+        # Ask for confirmation to overwrite
+        if not click.confirm("Do you want to overwrite it?", default=False):
+            console.print("Aborted.", style="dim")
+            return
+
+        # Remove existing global skill
+        import shutil
+        try:
+            shutil.rmtree(global_skill_path)
+            console.print(f"Removed existing global skill.", style="dim")
+        except Exception as e:
+            console.print(f"Failed to remove existing skill: {e}", style="red")
+            return
+
+    # Create global skills directory if it doesn't exist
+    DEFAULT_SKILLS_PATH.mkdir(parents=True, exist_ok=True)
+
+    # Move skill from project to global repo
+    import shutil
+    try:
+        shutil.move(str(project_skill_path), str(global_skill_path))
+        console.print(f"Moved skill to global repository: {global_skill_path}", style="green")
+    except Exception as e:
+        console.print(f"Failed to move skill: {e}", style="red")
+        return
+
+    # Create symlink from project to global repo
+    try:
+        os.symlink(global_skill_path, project_skill_path, target_is_directory=True)
+        console.print(f"Created symlink in project.", style="green")
+        console.print(f"\nSkill '{skill_name}' saved successfully!", style="bold green")
+    except Exception as e:
+        console.print(f"Failed to create symlink: {e}", style="red")
+        console.print(f"Skill is in global repo but not linked to project.", style="yellow")
 
 
 @cli.command("completion")
