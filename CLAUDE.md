@@ -49,6 +49,7 @@ skillman ls
 src/skillman/
 ├── __init__.py
 ├── cli.py          # Punto de entrada CLI (Click framework)
+├── config.py       # Manejo de configuración (config.toml)
 └── skills.py       # Lógica de parsing y discovery de skills
 ```
 
@@ -60,11 +61,32 @@ src/skillman/
    - Delega lógica de skills a `SkillManager`
    - Usa Rich para output con colores y formato
 
-2. **skills.py** - Core logic
+2. **config.py** - Configuration management
+   - Maneja el archivo de configuración `~/.claude/skillman/config.toml`
+   - `get_skills_paths()`: retorna lista de paths donde buscar skills
+   - `add_skills_path()`: agrega un nuevo path a la configuración
+   - `remove_skills_path()`: elimina un path de la configuración
+   - Crea el archivo con valores por defecto si no existe
+
+3. **skills.py** - Core logic
    - `SkillManager`: clase principal para descubrir y parsear skills
    - `get_skills()`: escanea un directorio y retorna lista de skills
    - `_parse_skill()`: parsea un skill individual desde su directorio
    - `_extract_description()`: extrae descripción del frontmatter YAML en SKILL.md
+
+### Configuración
+
+El archivo de configuración se ubica en `~/.claude/skillman/config.toml` y se crea automáticamente la primera vez que se ejecuta skillman.
+
+```toml
+# Lista de paths donde buscar skills
+skills_paths = [
+    "/home/user/.claude/skillman/skills",
+    "/path/to/other/skills"
+]
+```
+
+Por defecto, skillman busca skills en `~/.claude/skillman/skills`. Se pueden agregar múltiples paths y skillman buscará skills en todos ellos.
 
 ### Formato de skills
 
@@ -100,6 +122,7 @@ Estos skills son ejemplos reales tomados de otro proyecto y sirven para testing.
 ```
 tests/
 ├── test_cli.py      # Tests de comandos CLI usando CliRunner
+├── test_config.py   # Tests de configuración
 ├── test_skills.py   # Tests de SkillManager
 └── fixtures/        # Skills de prueba con diferentes configuraciones
 ```
@@ -123,6 +146,8 @@ poetry run pytest tests/test_cli.py::TestListCommand::test_ls_with_valid_path
 
 - **click** ^8.0.0 - CLI framework
 - **rich** ^13.0.0 - Terminal UI con colores y tablas
+- **tomli** ^2.0.0 - TOML parser (solo Python < 3.11)
+- **tomli-w** ^1.0.0 - TOML writer
 - **pytest** ^7.0.0 - Testing (dev dependency)
 
 ## Python version

@@ -1,10 +1,10 @@
 """Main CLI interface for skillman."""
 
-import os
 from pathlib import Path
 import click
 from rich.console import Console
 
+from .config import get_skills_paths
 from .skills import SkillManager
 
 console = Console()
@@ -22,7 +22,7 @@ def cli():
     "--path",
     "-p",
     default=None,
-    help="Custom path to skills directory (default: ~/.claude/skills)",
+    help="Custom path to skills directory (default: paths from config)",
 )
 @click.option(
     "--detailed",
@@ -32,64 +32,74 @@ def cli():
 )
 def list_skills(path, detailed):
     """List all available Claude skills."""
-    
-    # Determine the skills directory
+
+    # Determine the skills directories
     if path:
-        skills_dir = Path(path)
+        skills_dirs = [Path(path)]
     else:
-        skills_dir = Path.home() / ".claude" / "skills"
-    
-    # Check if directory exists
-    if not skills_dir.exists():
-        console.print(f"Skills directory not found: {skills_dir}", style="yellow")
+        skills_dirs = get_skills_paths()
+
+    all_skills = []
+    valid_dirs = []
+
+    for skills_dir in skills_dirs:
+        if not skills_dir.exists():
+            console.print(f"Skills directory not found: {skills_dir}", style="yellow")
+            continue
+
+        valid_dirs.append(skills_dir)
+        manager = SkillManager(skills_dir)
+        skills = manager.get_skills()
+        all_skills.extend(skills)
+
+    if not valid_dirs:
+        console.print("No valid skills directories found.", style="yellow")
         console.print("Tip: Create the directory or specify a custom path with --path", style="dim")
         return
-    
-    # Get skills using SkillManager
-    manager = SkillManager(skills_dir)
-    skills = manager.get_skills()
-    
-    if not skills:
-        console.print(f"No skills found in: {skills_dir}", style="yellow")
+
+    if not all_skills:
+        console.print("No skills found in configured paths.", style="yellow")
         return
-    
+
     # Display skills
     if detailed:
-        _display_detailed_skills(skills, skills_dir)
+        _display_detailed_skills(all_skills, valid_dirs)
     else:
-        _display_simple_skills(skills, skills_dir)
+        _display_simple_skills(all_skills, valid_dirs)
 
 
-def _display_simple_skills(skills, skills_dir):
+def _display_simple_skills(skills, skills_dirs):
     """Display skills in a simple list format."""
     console.print(f"\nSkills ({len(skills)}):", style="bold")
     console.print()
-    
+
     for skill in sorted(skills, key=lambda s: s["name"]):
         name = skill["name"]
         desc = skill["description"] or "No description"
         console.print(f"  {name}", style="cyan")
         console.print(f"    {desc}", style="dim")
         console.print()
-    
-    console.print(f"Location: {skills_dir}", style="dim")
+
+    console.print("Locations:", style="dim")
+    for d in skills_dirs:
+        console.print(f"  - {d}", style="dim")
 
 
-def _display_detailed_skills(skills, skills_dir):
+def _display_detailed_skills(skills, skills_dirs):
     """Display skills with detailed information."""
     console.print(f"\nSkills ({len(skills)}):", style="bold")
     console.print()
-    
+
     for skill in sorted(skills, key=lambda s: s["name"]):
         console.print(f"  {skill['name']}", style="cyan bold")
-        
+
         if skill["description"]:
             console.print(f"    {skill['description']}", style="white")
         else:
             console.print("    No description", style="dim")
-        
+
         console.print(f"    Path: {skill['path']}", style="dim")
-        
+
         extras = []
         if skill.get("has_scripts"):
             extras.append("scripts")
@@ -97,13 +107,15 @@ def _display_detailed_skills(skills, skills_dir):
             extras.append("examples")
         if skill.get("has_resources"):
             extras.append("resources")
-        
+
         if extras:
             console.print(f"    Contains: {', '.join(extras)}", style="dim")
-        
+
         console.print()
-    
-    console.print(f"Location: {skills_dir}", style="dim")
+
+    console.print("Locations:", style="dim")
+    for d in skills_dirs:
+        console.print(f"  - {d}", style="dim")
 
 
 if __name__ == "__main__":
