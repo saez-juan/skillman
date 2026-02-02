@@ -30,6 +30,40 @@ poetry run skillman ls
 pip install .
 ```
 
+## Shell Completion
+
+Skillman supports bash/zsh/fish completion for commands and skill names.
+
+### Quick setup (Bash)
+
+```bash
+# Install completion
+skillman completion --install
+
+# Add to ~/.bashrc (one time)
+echo 'source ~/.local/share/bash-completion/completions/skillman' >> ~/.bashrc
+
+# Or use eval (loads on each shell start)
+echo 'eval "$(_SKILLMAN_COMPLETE=bash_source skillman)"' >> ~/.bashrc
+```
+
+Then restart your shell or run `source ~/.bashrc`.
+
+Now you can:
+- `skillman <TAB>` → shows available commands
+- `skillman add <TAB>` → shows available skills from global repository
+- `skillman remove <TAB>` → shows skills in current project
+
+### Other shells
+
+```bash
+# Zsh - add to ~/.zshrc
+eval "$(_SKILLMAN_COMPLETE=zsh_source skillman)"
+
+# Fish - add to ~/.config/fish/config.fish
+eval (env _SKILLMAN_COMPLETE=fish_source skillman)
+```
+
 ## Usage
 
 ### List skills in current project

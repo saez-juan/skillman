@@ -35,6 +35,10 @@ poetry run skillman add <skill-name>
 
 # Remover una skill del proyecto
 poetry run skillman remove <skill-name>
+
+# Configurar bash completion
+poetry run skillman completion
+poetry run skillman completion --install
 ```
 
 ### Testing
@@ -96,9 +100,11 @@ skillman.spec       # PyInstaller spec file para compilar binario
    - `skillman ls`: lista skills del proyecto (`./.claude/skills`)
    - `skillman ls --global`: lista skills del repo global (`~/.claude/skillman/skills`)
    - `skillman ls --available`: lista skills disponibles para agregar
-   - `skillman add <skill>`: crea symlink de global a proyecto
-   - `skillman remove <skill>`: elimina symlink del proyecto
+   - `skillman add <skill>`: crea symlink de global a proyecto (con completion)
+   - `skillman remove <skill>`: elimina symlink del proyecto (con completion)
+   - `skillman completion`: genera e instala bash completion
    - Usa Rich para output con colores y formato
+   - Shell completion integrado: autocompleta comandos y nombres de skills
 
 2. **config.py** - Configuration management
    - `DEFAULT_SKILLS_PATH`: path del repositorio global (`~/.claude/skillman/skills`)
